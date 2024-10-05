@@ -4,15 +4,20 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
-    "settings": {
+    "postCreateCommand": "git --version && cmake --version && make --version && g++ --version",
+    "remoteUser": "root",
+    "workspaceFolder": "/workspace",
+    "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "/bin/bash",
         "terminal.integrated.shell.linux": "/bin/bash"
-    },
-    "extensions": [
+      },
+      "extensions": [
         "ms-vscode.cpptools",
         "twxs.cmake",
         "ms-vscode.makefile-tools"
-    ],
-    "postCreateCommand": "git --version && cmake --version && make --version && g++ --version",
-    "remoteUser": "root",
-    "workspaceFolder": "/workspace"
+      ]
+    }
+  }
 }
