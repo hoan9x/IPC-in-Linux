@@ -1,5 +1,5 @@
 {
-    "name": "C/C++ Development Container",
+    "name": "IPC in Linux",
     "build": {
         "dockerfile": "Dockerfile",
         "context": ".."
