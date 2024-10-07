@@ -3,7 +3,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <signal.h>
-#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -70,7 +69,7 @@ int main(int argc, char *argv[])
         LOG_ERROR("Creating a connection socket failed");
         cleanupAndExitError(-1, -1, socketPath);
     }
-    LOG_INFO("Connection socket created");
+    LOG_INFO("Connection socket created (%d)", connSocket);
 
     /* Initialize socket info structure */
     memset(&structSocketInfo, 0, sizeof(struct sockaddr_un));
@@ -86,7 +85,10 @@ int main(int argc, char *argv[])
     }
     LOG_INFO("Bind connection socket to path [%s] succeeded", socketPath);
 
-    /* Listen for incoming connections */
+    /**
+     * Listen for incoming connections, the second parameter means that while a request is being processed,
+     * MAX_NUMBER_PENDING_CONNECTIONS requests can wait.
+     */
     ret = listen(connSocket, MAX_NUMBER_PENDING_CONNECTIONS);
     if (-1 == ret)
     {
@@ -105,7 +107,7 @@ int main(int argc, char *argv[])
             LOG_ERROR("accept() return error");
             cleanupAndExitError(connSocket, dataSocket, socketPath);
         }
-        LOG_INFO("Connection established");
+        LOG_INFO("Connection established (%d)", dataSocket);
 
         /* ------------------------------------------
          Now the server and client can exchange data
@@ -116,7 +118,7 @@ int main(int argc, char *argv[])
             memset(buffer, 0, BUFFER_SIZE);
 
             /* Read data from the client */
-            LOG_INFO("Waiting for data from the client using read()");
+            LOG_INFO("Waiting for data from the client's fd[%d] using read()", dataSocket);
             ret = read(dataSocket, buffer, BUFFER_SIZE);
             if (-1 == ret)
             {

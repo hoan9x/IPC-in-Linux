@@ -87,16 +87,6 @@ int main(int argc, char *argv[])
             LOG_ERROR("Send data to server failed");
             cleanupAndExitError(dataSocket);
         }
-
-        /* Receive data from server */
-        memset(buffer, 0, BUFFER_SIZE);
-        ret = read(dataSocket, buffer, BUFFER_SIZE);
-        if (-1 == ret)
-        {
-            LOG_ERROR("Received data from server failed");
-            cleanupAndExitError(dataSocket);
-        }
-        LOG_INFO("Received data: [%.*s]", /*number read*/ret, buffer);
         /* Sleep for 3s */
         sleep(3);
     }

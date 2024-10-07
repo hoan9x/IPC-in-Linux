@@ -7,3 +7,6 @@ mkdir -p $build_out_dir
 
 g++ $pwd_dir/../one_to_one/server.c -o $build_out_dir/server.app
 g++ $pwd_dir/../one_to_one/client.c -o $build_out_dir/client.app
+
+g++ $pwd_dir/../one_to_many/server.c -o $build_out_dir/multiplexing_server.app
+g++ $pwd_dir/../one_to_many/client.c -o $build_out_dir/many_client.app
