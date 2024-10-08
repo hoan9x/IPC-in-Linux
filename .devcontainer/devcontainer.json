@@ -14,9 +14,11 @@
         "terminal.integrated.shell.linux": "/bin/bash"
       },
       "extensions": [
-        "ms-vscode.cpptools",
         "twxs.cmake",
-        "ms-vscode.makefile-tools"
+        "ms-vscode.makefile-tools",
+        "ms-vscode.cpptools-extension-pack",
+        "aaron-bond.better-comments",
+        "akmarnafi.comment-headers"
       ]
     }
   }
