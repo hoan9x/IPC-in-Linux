@@ -1,3 +1,12 @@
+/**------------------------------------------------------------------------------------------------
+ * ?                                           ABOUT
+ * @author         :  Nguyen Dinh Hoan
+ * @email          :  hoann.wk@gmail.com
+ * @repo           :  https://github.com/hoan9x/IPC-in-Linux
+ * @createdOn      :  08-Oct-2024
+ * @description    :  This example demonstrates a UNIX domain socket server handling multiple clients
+ *                    using select()
+ *------------------------------------------------------------------------------------------------**/
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -15,6 +24,11 @@
 #define BUFFER_SIZE 128
 #define MAX_NUMBER_PENDING_CONNECTIONS 10
 #define MAX_CLIENT_SUPPORTED 32
+
+#define IF_FAIL_THEN_EXIT(EXP, RELEASE, MSG, ...) ({ if (EXP) { LOG_ERROR(MSG, ##__VA_ARGS__); cleanupAndExitError(RELEASE); } })
+
+/* Flag to enable/disable select() use case on timeout */ 
+#define USE_CASE_SELECT_TIMEOUT 1
 
 /* An array of fd (file descriptors also called as data sockets) */
 int arrayFdSet[MAX_CLIENT_SUPPORTED];
@@ -86,7 +100,6 @@ static void cloneFdSetStruct(fd_set *ptrFdSet)
     }
 }
 
-/* Get the max value among all FDs which server is monitoring */
 static int getMaxFromArrayFdSet()
 {
     int i = 0;
@@ -101,80 +114,73 @@ static int getMaxFromArrayFdSet()
 
 int main(int argc, char *argv[])
 {
-    struct sockaddr_un structSocketInfo;
-    fd_set structFdSet;
-    int connSocket = -1, dataSocket = -1, ret, commSocketFd, i;
-    char buffer[BUFFER_SIZE];
     /* Initialize socket path from application input parameter or default value */
     const char *socketPath = (argc>1)?argv[1]:DEFAULT_SOCKET_PATH;
+    struct sockaddr_un structSocketInfo;
+    /* Initialize socket info structure */
+    memset(&structSocketInfo, 0, sizeof(struct sockaddr_un));
+    structSocketInfo.sun_family = AF_UNIX;
+    strncpy(structSocketInfo.sun_path, socketPath, sizeof(structSocketInfo.sun_path)-1);
+    fd_set rfds; /* read fds */
+#if (USE_CASE_SELECT_TIMEOUT)
+    struct timeval tv2Set, tv2Print;
+#endif
+    int connSocket = -1, dataSocket = -1, ret, commSocketFd, i;
+    char buffer[BUFFER_SIZE];
 
     initArrayFdSet();
     /* Add socket descriptor 0 to monitor stdin */
     addToArrayFdSet(0);
-
     /* Remove the socket if it exists */
     unlink(socketPath);
 
     /* Create connection socket (master socket file descriptor) */
     connSocket = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (-1 == connSocket)
-    {
-        LOG_ERROR("Creating a connection socket failed");
-        cleanupAndExitError(socketPath);
-    }
+    IF_FAIL_THEN_EXIT(connSocket < 0, socketPath, "Creating a connection socket failed");
     LOG_INFO("Connection socket created (%d)", connSocket);
-
-    /* Initialize socket info structure */
-    memset(&structSocketInfo, 0, sizeof(struct sockaddr_un));
-    structSocketInfo.sun_family = AF_UNIX;
-    strncpy(structSocketInfo.sun_path, socketPath, sizeof(structSocketInfo.sun_path)-1);
 
     /* Bind connection socket to path */
     ret = bind(connSocket, (const struct sockaddr *)&structSocketInfo, sizeof(struct sockaddr_un));
-    if (-1 == ret)
-    {
-        LOG_ERROR("Bind connection socket to path failed");
-        cleanupAndExitError(socketPath);
-    }
+    IF_FAIL_THEN_EXIT(ret < 0, socketPath, "Bind connection socket to path failed");
     LOG_INFO("Bind connection socket to path [%s] succeeded", socketPath);
 
     /**
      * Listen for incoming connections, the second parameter means that while a request is being processed,
      * MAX_NUMBER_PENDING_CONNECTIONS requests can wait.
-     */
+     **/
     ret = listen(connSocket, MAX_NUMBER_PENDING_CONNECTIONS);
-    if (-1 == ret)
-    {
-        LOG_ERROR("Listening on socket failed");
-        cleanupAndExitError(socketPath);
-    }
+    IF_FAIL_THEN_EXIT(ret < 0, socketPath, "Listening on socket failed");
     LOG_INFO("Listening for incoming connections...");
 
     /* Add connection socket to array set of FDs */
     addToArrayFdSet(connSocket);
-
     /* Main server loop */
     for (;;)
     {
-        cloneFdSetStruct(&structFdSet);
+        cloneFdSetStruct(&rfds);
         LOG_INFO("##### Waiting on select()");
 
+#if (USE_CASE_SELECT_TIMEOUT)
+        /* select() will modify timeval, must re-init it before call select() */
+        tv2Set.tv_sec = 1;
+        tv2Set.tv_usec = 0;
+        tv2Print = tv2Set;
+        /* Call select(), the server will block until there is a connection or data request or timeout */
+        select(getMaxFromArrayFdSet()+1, &rfds, NULL, NULL, /*timeout*/&tv2Set);
+#else
         /* Call select(), the server will block until there is a connection or data request on any FDs */
-        select(getMaxFromArrayFdSet()+1, &structFdSet, NULL, NULL, NULL);
+        select(getMaxFromArrayFdSet()+1, &rfds, NULL, NULL, NULL);
+#endif
 
-        if (FD_ISSET(connSocket, &structFdSet))
+        if (FD_ISSET(connSocket, &rfds))
         {
             LOG_INFO("New connection received, accepting the connection");
             dataSocket = accept(connSocket, NULL, NULL);
-            if (-1 == dataSocket)
-            {
-                LOG_ERROR("accept() return error");
-                cleanupAndExitError(socketPath);
-            }
+            IF_FAIL_THEN_EXIT(dataSocket < 0, socketPath, "accept() return error");
             LOG_INFO("Connection established (%d)", dataSocket);
             addToArrayFdSet(dataSocket);
         }
-        else if (FD_ISSET(0, &structFdSet))
+        else if (FD_ISSET(0, &rfds))
         {
             /* Input from console stdin */
             memset(buffer, 0, BUFFER_SIZE);
@@ -187,13 +193,20 @@ int main(int argc, char *argv[])
             i = 0; commSocketFd = -1;
             for (; i < MAX_CLIENT_SUPPORTED; ++i)
             {
-                if (FD_ISSET(arrayFdSet[i], &structFdSet))
+                if (FD_ISSET(arrayFdSet[i], &rfds))
                 {
                     commSocketFd = arrayFdSet[i];
                     break;
                 }
             }
 
+#if (USE_CASE_SELECT_TIMEOUT)
+            if (commSocketFd < 0)
+            {
+                LOG_INFO("select() timeout and no data within %ld(s) and %ld(us)", tv2Print.tv_sec, tv2Print.tv_usec);
+                continue;
+            }
+#endif
             /* Prepare the buffer to receive the data */
             memset(buffer, 0, BUFFER_SIZE);
             LOG_INFO("Waiting for data from the client's fd[%d] using read()", commSocketFd);

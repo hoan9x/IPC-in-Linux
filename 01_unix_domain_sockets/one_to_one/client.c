@@ -1,3 +1,11 @@
+/**------------------------------------------------------------------------------------------------
+ * ?                                           ABOUT
+ * @author         :  Nguyen Dinh Hoan
+ * @email          :  hoann.wk@gmail.com
+ * @repo           :  https://github.com/hoan9x/IPC-in-Linux
+ * @createdOn      :  08-Oct-2024
+ * @description    :  This example demonstrates a client exchanging data over a UNIX domain socket
+ *------------------------------------------------------------------------------------------------**/
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -71,9 +79,9 @@ int main(int argc, char *argv[])
         cleanupAndExitError(dataSocket);
     }
 
-    /* ------------------------------------------
-     Now the server and client can exchange data
-    -------------------------------------------*/
+    /**------------------------------------------------------------------------
+     *                Now the server and client can exchange data
+     *------------------------------------------------------------------------**/
     for (int index = 0; isKeepRunning; ++index)
     {
         /* Prepare data to send to server */

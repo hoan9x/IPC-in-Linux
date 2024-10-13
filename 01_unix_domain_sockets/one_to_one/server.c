@@ -1,3 +1,11 @@
+/**------------------------------------------------------------------------------------------------
+ * ?                                           ABOUT
+ * @author         :  Nguyen Dinh Hoan
+ * @email          :  hoann.wk@gmail.com
+ * @repo           :  https://github.com/hoan9x/IPC-in-Linux
+ * @createdOn      :  08-Oct-2024
+ * @description    :  This example demonstrates a UNIX domain socket server
+ *------------------------------------------------------------------------------------------------**/
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -109,9 +117,9 @@ int main(int argc, char *argv[])
         }
         LOG_INFO("Connection established (%d)", dataSocket);
 
-        /* ------------------------------------------
-         Now the server and client can exchange data
-         -------------------------------------------*/
+        /**------------------------------------------------------------------------
+        *                Now the server and client can exchange data
+        *------------------------------------------------------------------------**/
         while (true)
         {
             /* Initialize the buffer array to 0 */
