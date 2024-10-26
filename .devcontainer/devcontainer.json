@@ -4,9 +4,10 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
-    "postCreateCommand": "git --version && cmake --version && make --version && g++ --version",
+    "postCreateCommand": "",
     "remoteUser": "root",
     "workspaceFolder": "/workspaces",
+    "runArgs": ["--name", "ipc-linux"],
     "customizations": {
     "vscode": {
       "settings": {
