@@ -6,6 +6,7 @@
  * @createdOn      :  08-Oct-2024
  * @description    :  This example demonstrates a UNIX domain socket server
  *------------------------------------------------------------------------------------------------**/
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -19,7 +20,7 @@
 #define LOG_INFO(format, ...) do { printf("[SERVER_INFO] " format "\n", ##__VA_ARGS__); } while (0)
 #define LOG_ERROR(format, ...) do { printf("[SERVER_ERROR] " format "\n", ##__VA_ARGS__); } while (0)
 
-#define DEFAULT_SOCKET_PATH "/tmp/DemoSocket"
+#define DEFAULT_SOCKET_PATH "/tmp/ipc-demo.sock"
 #define BUFFER_SIZE 128
 #define MAX_NUMBER_PENDING_CONNECTIONS 1
 

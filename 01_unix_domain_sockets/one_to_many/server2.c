@@ -5,7 +5,7 @@
  * @repo           :  https://github.com/hoan9x/IPC-in-Linux
  * @createdOn      :  08-Oct-2024
  * @description    :  This example demonstrates a UNIX domain socket server handling multiple clients
- *                    using select()
+ *                    using pselect()
  *------------------------------------------------------------------------------------------------**/
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
@@ -15,6 +15,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/select.h>
+#include <signal.h>
+#include <errno.h>
+#include <time.h>
 #include <unistd.h>
 
 /* LOG macro function */
@@ -28,11 +31,35 @@
 
 #define IF_FAIL_THEN_EXIT(EXP, RELEASE, MSG, ...) ({ if (EXP) { LOG_ERROR(MSG, ##__VA_ARGS__); cleanupAndExitError(RELEASE); } })
 
-/* Flag to enable/disable select() use case on timeout */ 
-#define USE_CASE_SELECT_TIMEOUT 1
+/* Flag to enable/disable pselect() use case on timeout */ 
+#define USE_CASE_PSELECT_TIMEOUT 1
 
 /* An array of fd (file descriptors also called as data sockets) */
 int arrayFdSet[MAX_CLIENT_SUPPORTED];
+
+/* Signal handler function */
+volatile sig_atomic_t isSignalReceived = false;
+volatile sig_atomic_t signalNumber = 0;
+void handleSignal(const int sigNum)
+{
+    isSignalReceived = true;
+    signalNumber = sigNum;
+    switch (sigNum)
+    {
+        case SIGINT:
+            LOG_INFO("Signal SIGINT [%i] (Ctrl+C) received", sigNum);
+            break;
+        case SIGTERM:
+            LOG_INFO("Signal SIGTERM [%i] (default `kill` or `killall`) received", sigNum);
+            break;
+        case SIGTSTP:
+            LOG_INFO("Signal SIGTSTP [%i] (Ctrl+Z) received", sigNum);
+            break;
+        default:
+            LOG_INFO("Signal [%i] received", sigNum);
+            break;
+    }
+}
 
 /* Function to clean up resources and exit */
 void cleanupAndExitError(const char *socketPath)
@@ -63,24 +90,24 @@ static void initArrayFdSet()
     }
 }
 
-static void addToArrayFdSet(int skt_fd)
+static void addToArrayFdSet(int fdNum)
 {
     int i = 0;
     for (; i < MAX_CLIENT_SUPPORTED; i++)
     {
         if (arrayFdSet[i] != -1)
             continue;
-        arrayFdSet[i] = skt_fd;
+        arrayFdSet[i] = fdNum;
         break;
     }
 }
 
-static void removeFromArrayFdSet(int skt_fd)
+static void removeFromArrayFdSet(int fdNum)
 {
     int i = 0;
     for (; i < MAX_CLIENT_SUPPORTED; i++)
     {
-        if (arrayFdSet[i] != skt_fd)
+        if (arrayFdSet[i] != fdNum)
             continue;
         arrayFdSet[i] = -1;
         break;
@@ -115,6 +142,33 @@ static int getMaxFromArrayFdSet()
 
 int main(int argc, char *argv[])
 {
+    sigset_t sigList;
+    /* Prepare a list of block all signals */
+    sigfillset(&sigList);
+    /* Allowing only specific fllowing signals */
+    sigdelset(&sigList, SIGINT);
+    sigdelset(&sigList, SIGTSTP);
+    sigdelset(&sigList, SIGQUIT);
+    sigdelset(&sigList, SIGTERM);
+    /* Apply list signal to block for this process */
+    sigprocmask(SIG_BLOCK, &sigList, NULL);
+
+    struct sigaction sa;
+    sa.sa_handler = handleSignal;
+    /* Restart interrupted system calls */
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+
+    /* Register signal handler for SIGINT (Ctrl+C) */
+    sigaction(SIGINT, &sa, NULL);
+    /* Register signal handler for SIGTSTP (Ctrl+Z) */
+    sigaction(SIGTSTP, &sa, NULL);
+    /* Register signal handler for SIGTSTP (Ctrl+\) */
+    sigaction(SIGQUIT, &sa, NULL);
+    /* Register signal handler for SIGTERM */
+    sigaction(SIGTERM, &sa, NULL);
+    LOG_INFO("Press Ctrl+C to send SIGINT, Ctrl+Z to send SIGTSTP, Ctrl+\\ to send SIGQUIT, `kill -SIGTERM <pid>` to send SIGTERM");
+
     /* Initialize socket path from application input parameter or default value */
     const char *socketPath = (argc>1)?argv[1]:DEFAULT_SOCKET_PATH;
     struct sockaddr_un structSocketInfo;
@@ -123,8 +177,27 @@ int main(int argc, char *argv[])
     structSocketInfo.sun_family = AF_UNIX;
     strncpy(structSocketInfo.sun_path, socketPath, sizeof(structSocketInfo.sun_path)-1);
     fd_set rfds; /* read fds */
-#if (USE_CASE_SELECT_TIMEOUT)
-    struct timeval tv2Set, tv2Print;
+    /* Initialize sigmask to pselect() */
+    sigset_t sigmask2Set;
+    /**----------------------------------------------
+     * ### To block a specific signal, use 'sigemptyset()' and 'sigaddset()', for example:
+     * sigemptyset(&sigmask2Set);           Init an empty singal set, it means unblock all signals
+     * sigaddset(&sigmask2Set, SIGINT);     Block SIGINT
+     * sigaddset(&sigmask2Set, SIGTERM);    Block SIGTERM
+     * ### To block all signals except some specific signals, use 'sigfillset()' and 'sigdelset()', for example:
+     * sigfillset(&sigmask2Set);            Block all signals
+     * sigdelset(&sigmask2Set, SIGINT);     Unblock SIGINT
+     * sigdelset(&sigmask2Set, SIGTERM);    Unblock SIGTERM
+     *---------------------------------------------**/
+    sigfillset(&sigmask2Set);
+    sigdelset(&sigmask2Set, SIGINT);
+    sigdelset(&sigmask2Set, SIGTSTP);
+    sigdelset(&sigmask2Set, SIGQUIT);
+    sigdelset(&sigmask2Set, SIGTERM);
+#if (USE_CASE_PSELECT_TIMEOUT)
+    struct timespec ts2Set;
+    ts2Set.tv_sec = 3;
+    ts2Set.tv_nsec = 0;
 #endif
     int connSocket = -1, dataSocket = -1, ret, commSocketFd, i;
     char buffer[BUFFER_SIZE];
@@ -159,31 +232,41 @@ int main(int argc, char *argv[])
     for (;;)
     {
         cloneFdSetStruct(&rfds);
-        LOG_INFO("##### Waiting on select()");
+        LOG_INFO("##### Waiting on pselect()");
 
-#if (USE_CASE_SELECT_TIMEOUT)
-        /**
-         * select() may update the timeout argument to indicate how much time was left,
-         * so you must re-init it before call select()
-         **/
-        tv2Set.tv_sec = 5;
-        tv2Set.tv_usec = 0;
-        tv2Print = tv2Set;
-        /* Call select(), the server will block until there is a connection or data request or timeout */
-        ret = select(getMaxFromArrayFdSet()+1, &rfds, NULL, NULL, /*timeout*/&tv2Set);
+#if (USE_CASE_PSELECT_TIMEOUT)
+        /* Call pselect(), the server will block until there is a connection or data request or timeout or signal received */
+        ret = pselect(getMaxFromArrayFdSet()+1, &rfds, NULL, NULL, /*timeout*/&ts2Set, &sigmask2Set);
 #else
-        /* Call select(), the server will block until there is a connection or data request on any FDs */
-        ret = select(getMaxFromArrayFdSet()+1, &rfds, NULL, NULL, NULL);
+        /* Call pselect(), the server will block until there is a connection or data request on any FDs or signal received */
+        ret = pselect(getMaxFromArrayFdSet()+1, &rfds, NULL, NULL, NULL, &sigmask2Set);
 #endif
         if (ret < 0)
         {
-            LOG_ERROR("select() return error");
-            cleanupAndExitError(socketPath);
+            if (errno == EINTR)
+            {
+                LOG_ERROR("pselect() return interrupted system call");
+                if (isSignalReceived)
+                {
+                    isSignalReceived = false;
+                    if (SIGINT==signalNumber)
+                    {
+                        LOG_INFO("Shutdown due to signal [%d]", signalNumber);
+                        break;
+                    }
+                    else continue;
+                }
+            }
+            else
+            {
+                LOG_ERROR("pselect() return error");
+                cleanupAndExitError(socketPath);
+            }
         }
-#if (USE_CASE_SELECT_TIMEOUT)
+#if (USE_CASE_PSELECT_TIMEOUT)
         else if (0 == ret)
         {
-            LOG_INFO("select() timeout and no data within %ld(s) and %ld(us)", tv2Print.tv_sec, tv2Print.tv_usec);
+            LOG_INFO("pselect() timeout and no data within %ld(s) and %ld(ns)", ts2Set.tv_sec, ts2Set.tv_nsec);
             continue;
         }
 #endif
